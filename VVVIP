@@ -1,0 +1,146 @@
+-- ลบ UI เก่า
+local old = game:GetService("CoreGui"):FindFirstChild("FlingPersistent")
+if old then old:Destroy() end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local targetName = ""
+local flyEnabled = true
+local flySpeed = 75
+
+-- === [ 1. GUI SETUP ] ===
+local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+ScreenGui.Name = "FlingPersistent"
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 250, 0, 440)
+MainFrame.Position = UDim2.new(0.5, -125, 0.3, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.Active = true
+MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "PERSISTENT FLING"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+
+local Scroll = Instance.new("ScrollingFrame", MainFrame)
+Scroll.Size = UDim2.new(1, -20, 0, 200)
+Scroll.Position = UDim2.new(0, 10, 0, 50)
+Scroll.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+Scroll.ScrollBarThickness = 5
+
+local function updateList()
+    for _, v in pairs(Scroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+    local count = 0
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local btn = Instance.new("TextButton", Scroll)
+            btn.Size = UDim2.new(1, -10, 0, 30)
+            btn.Position = UDim2.new(0, 5, 0, count * 35)
+            btn.Text = plr.DisplayName
+            btn.BackgroundColor3 = (targetName == plr.Name) and Color3.fromRGB(255, 80, 0) or Color3.fromRGB(45, 45, 45)
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Instance.new("UICorner", btn)
+            btn.MouseButton1Click:Connect(function() targetName = plr.Name updateList() end)
+            count = count + 1
+        end
+    end
+    Scroll.CanvasSize = UDim2.new(0, 0, 0, count * 35)
+end
+updateList()
+
+local FlingBtn = Instance.new("TextButton", MainFrame)
+FlingBtn.Size = UDim2.new(1, -20, 0, 50)
+FlingBtn.Position = UDim2.new(0, 10, 1, -120)
+FlingBtn.Text = "ล็อคเป้าชนจนปลิว (LOCK FLING)"
+FlingBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 0)
+FlingBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlingBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", FlingBtn)
+
+local FlyBtn = Instance.new("TextButton", MainFrame)
+FlyBtn.Size = UDim2.new(1, -20, 0, 45)
+FlyBtn.Position = UDim2.new(0, 10, 1, -60)
+FlyBtn.Text = "ระบบบินตอนนั่ง: ON"
+FlyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
+FlyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", FlyBtn)
+
+-- === [ 2. LOGIC: PERSISTENT FLING (เกาะจนกว่าจะหายไป) ] ===
+local function doLockFling()
+    local targetPlr = Players:FindFirstChild(targetName)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if targetPlr and targetPlr.Character and hrp then
+        local tHRP = targetPlr.Character:FindFirstChild("HumanoidRootPart")
+        if tHRP then
+            local lastPos = hrp.CFrame
+            local startTime = tick()
+            
+            -- วนลูปจนกว่าจะปลิวไกลเกิน 150 เมตร หรือผ่านไปเกิน 4 วินาที (กันบัค)
+            while targetPlr.Character and tHRP.Parent and (tHRP.Position - lastPos.Position).Magnitude < 150 do
+                RunService.Heartbeat:Wait()
+                
+                -- ทำให้ตัวเราหมุนเป็นพายุล่องหน
+                hrp.Velocity = Vector3.new(0, 5000, 0)
+                hrp.RotVelocity = Vector3.new(0, 5000, 0)
+                
+                -- วาร์ปไปเกาะที่เป้าหมาย (สุ่มตำแหน่งรอบๆ เพื่อเพิ่มแรงปะทะ)
+                hrp.CFrame = tHRP.CFrame * CFrame.Angles(math.rad(math.random(0,360)), math.rad(math.random(0,360)), 0)
+                
+                -- ส่งแรงดีดเป้าหมายอย่างต่อเนื่อง
+                tHRP.Velocity = Vector3.new(math.random(-100,100), 2000, math.random(-100,100))
+                
+                -- ตัดจบถ้าใช้เวลานานเกินไป
+                if tick() - startTime > 4 then break end
+            end
+            
+            -- วาร์ปกลับจุดเดิม
+            hrp.CFrame = lastPos
+            hrp.Velocity = Vector3.new(0,0,0)
+            hrp.RotVelocity = Vector3.new(0,0,0)
+        end
+    end
+end
+
+FlingBtn.MouseButton1Click:Connect(doLockFling)
+
+-- === [ 3. ระบบบินสมบูรณ์แบบ ] ===
+local bv, bg = Instance.new("BodyVelocity"), Instance.new("BodyGyro")
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if flyEnabled and hum and hrp and hum.Sit then
+        bv.Parent, bg.Parent = hrp, hrp
+        bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        bg.CFrame = workspace.CurrentCamera.CFrame
+        local camCF = workspace.CurrentCamera.CFrame
+        local dir = Vector3.new(0,0,0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + camCF.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - camCF.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - camCF.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + camCF.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.new(0, 1, 0) end
+        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.Velocity = dir.Magnitude > 0 and dir.Unit * flySpeed or Vector3.new(0, 0, 0)
+    else
+        bv.Parent, bg.Parent = nil, nil
+    end
+end)
+
+FlyBtn.MouseButton1Click:Connect(function()
+    flyEnabled = not flyEnabled
+    FlyBtn.Text = flyEnabled and "ระบบบินตอนนั่ง: ON" or "ระบบบินตอนนั่ง: OFF"
+    FlyBtn.BackgroundColor3 = flyEnabled and Color3.fromRGB(0, 150, 200) or Color3.fromRGB(70, 70, 70)
+end)
